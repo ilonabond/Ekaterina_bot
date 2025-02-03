@@ -128,13 +128,38 @@ async def show_schedule(message: types.Message):
             else:
                 await message.answer("Ты не зарегистрирован! Введи /register")
 
-@dp.message(Command("update_schedule"))
+@dp.message(F.text == "📆 Обновить расписание")
 async def update_schedule(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         await message.answer("⛔ У вас нет прав для использования этой команды.")
         return
-
     await message.answer("Введите ID ученика и расписание через `|` (пример: `123456|Занятие в среду 18:00`).")
+
+@dp.message(F.text.contains('|'))
+async def handle_update(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+
+    parts = message.text.split('|')
+    if len(parts) != 2:
+        await message.answer("⚠️ Неверный формат! Используйте: ID|Текст")
+        return
+
+    student_id, data = parts[0].strip(), parts[1].strip()
+
+    if not student_id.isdigit():
+        await message.answer("⚠️ ID должен быть числом!")
+        return
+
+    async with aiosqlite.connect("students.db") as db:
+        if "Обновить домашку" in message.text:
+            await db.execute("UPDATE students SET homework = ? WHERE id = ?", (data, int(student_id)))
+        elif "Обновить расписание" in message.text:
+            await db.execute("UPDATE students SET schedule = ? WHERE id = ?", (data, int(student_id)))
+        elif "Обновить прогресс" in message.text:
+            await db.execute("UPDATE students SET progress = ? WHERE id = ?", (data, int(student_id)))
+        await db.commit()
+    await message.answer("✅ Информация обновлена!")
 
 
 # Просмотр домашки
@@ -250,7 +275,7 @@ async def add_columns():
             print(f"Ошибка при добавлении колонок: {e}")
 
 # ====== ПРЕПОДАВАТЕЛЬ ПРОСМАТРИВАЕТ ВОПРОСЫ ======
-@dp.message(lambda message: message.text.strip().lower() == "📋 Просмотр вопросов")
+@dp.message(F.text == "📋 Просмотр вопросов")
 async def view_questions(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         await message.answer("⛔ У вас нет прав для использования этой команды.")
@@ -265,8 +290,8 @@ async def view_questions(message: types.Message):
         return
 
     for q in questions:
-        student_id, question = q[1], q[2]
-        await message.answer(f"Вопрос от ученика с ID {student_id}:\n{question}\n\nНапишите свой ответ.")
+        question_id, student_id, question_text = q
+        await message.answer(f"Вопрос от ученика с ID {student_id}:\n{question_text}")
 
 # ====== ПРЕПОДАВАТЕЛЬ ОТВЕЧАЕТ НА ВОПРОС ======
 @dp.message(lambda message: message.text.strip() != "📋 Просмотр вопросов" and message.from_user.id == ADMIN_ID)
