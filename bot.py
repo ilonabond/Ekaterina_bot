@@ -50,6 +50,13 @@ async def add_columns():
             # Если столбцы уже существуют, это может вызвать исключение
             print(f"Ошибка при добавлении колонок: {e}")
 
+start_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="🔑 Регистрация"), KeyboardButton(text="🔑 Войти")]
+    ],
+    resize_keyboard=True
+)
+
 # Клавиатура главного меню
 menu = ReplyKeyboardMarkup(
     keyboard=[
@@ -60,8 +67,24 @@ menu = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-# Регистрируем пользователя
-@dp.message(Command("register"))
+# ====== КОМАНДА /START ======
+@dp.message_handler(commands=["start"])
+async def cmd_start(message: types.Message):
+    user_id = message.from_user.id
+    user_name = message.from_user.first_name
+
+    # Проверка, зарегистрирован ли пользователь
+    async with aiosqlite.connect("students.db") as db:
+        async with db.execute("SELECT id FROM students WHERE id=?", (user_id,)) as cursor:
+            result = await cursor.fetchone()
+            if result:
+                await message.answer(f"Привет, {user_name}! Ты уже зарегистрирован.", reply_markup=main_menu)
+            else:
+                await message.answer(f"Привет, {user_name}! Для начала зарегистрируйся.", reply_markup=start_menu)
+
+
+# ====== РЕГИСТРАЦИЯ УЧЕНИКА ======
+@dp.message(lambda message: message.text.strip().lower() == "🔑 регистрация")
 async def register_student(message: types.Message):
     user_id = message.from_user.id
     user_name = message.from_user.first_name
@@ -73,7 +96,21 @@ async def register_student(message: types.Message):
         )
         await db.commit()
 
-    await message.answer(f"✅ {user_name}, ты зарегистрирован! Теперь ты можешь пользоваться ботом.", reply_markup=menu)
+    await message.answer(f"✅ {user_name}, ты зарегистрирован! Теперь ты можешь пользоваться ботом.", reply_markup=main_menu)
+
+
+# ====== ВХОД ПО ID ======
+@dp.message(lambda message: message.text.strip().lower() == "🔑 войти")
+async def login_by_id(message: types.Message):
+    user_id = message.from_user.id
+    async with aiosqlite.connect("students.db") as db:
+        async with db.execute("SELECT id FROM students WHERE id=?", (user_id,)) as cursor:
+            result = await cursor.fetchone()
+            if result:
+                await message.answer("Ты успешно вошёл!", reply_markup=main_menu)
+            else:
+                await message.answer("Ты не зарегистрирован! Введи /register для регистрации.")
+
 
 # Просмотр расписания
 @dp.message(lambda message: message.text.strip().lower() == "📆 моё расписание")
