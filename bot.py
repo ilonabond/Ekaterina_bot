@@ -87,6 +87,15 @@ async def show_schedule(message: types.Message):
             else:
                 await message.answer("Ты не зарегистрирован! Введи /register")
 
+@dp.message(Command("update_schedule"))
+async def update_schedule(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("⛔ У вас нет прав для использования этой команды.")
+        return
+
+    await message.answer("Введите ID ученика и расписание через `|` (пример: `123456|Занятие в среду 18:00`).")
+
+
 # Просмотр домашки
 @dp.message(lambda message: message.text.strip().lower() == "📚 моя домашка")
 async def show_homework(message: types.Message):
@@ -99,6 +108,15 @@ async def show_homework(message: types.Message):
             else:
                 await message.answer("Ты не зарегистрирован! Введи /register")
 
+@dp.message(Command("update_homework"))
+async def update_homework(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("⛔ У вас нет прав для использования этой команды.")
+        return
+
+    await message.answer("Введите ID ученика и домашнее задание через `|` (пример: `123456|Сделать тест №3`).")
+
+
 # Просмотр прогресса
 @dp.message(lambda message: message.text.strip().lower() == "📊 мой прогресс")
 async def student_progress(message: types.Message):
@@ -110,6 +128,14 @@ async def student_progress(message: types.Message):
                 await message.answer(f"📈 Твой прогресс:\n{result[0]}")
             else:
                 await message.answer("Ты не зарегистрирован! Введи /register")
+
+@dp.message(Command("update_progress"))
+async def update_progress(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("⛔ У вас нет прав для использования этой команды.")
+        return
+
+    await message.answer("Введите ID ученика и его новый прогресс через `|` (пример: `123456|Сдал тест на 90%`).")
 
 # ====== О репетиторе ======
 @dp.message(lambda message: message.text.strip().lower() == "ℹ️ о репетиторе")
