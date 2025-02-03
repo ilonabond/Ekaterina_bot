@@ -1,7 +1,7 @@
 import logging
 import asyncio
 import aiosqlite
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.filters import Command
 from dotenv import load_dotenv
@@ -84,7 +84,8 @@ async def cmd_start(message: types.Message):
 
 
 # ====== РЕГИСТРАЦИЯ УЧЕНИКА ======
-@dp.message(lambda message: message.text.strip().lower() == "🔑 регистрация")
+
+@dp.message(F.text == "🔑 Регистрация")  # Новый способ фильтрации сообщений
 async def register_student(message: types.Message):
     user_id = message.from_user.id
     user_name = message.from_user.first_name
@@ -96,8 +97,7 @@ async def register_student(message: types.Message):
         )
         await db.commit()
 
-    await message.answer(f"✅ {user_name}, ты зарегистрирован! Теперь ты можешь пользоваться ботом.", reply_markup=main_menu)
-
+    await message.answer(f"✅ {user_name}, ты зарегистрирован! Теперь ты можешь пользоваться ботом.", reply_markup=menu)
 
 # ====== ВХОД ПО ID ======
 @dp.message(lambda message: message.text.strip().lower() == "🔑 войти")
