@@ -54,7 +54,8 @@ async def add_columns():
 menu = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="📚 Моя домашка"), KeyboardButton(text="📆 Моё расписание")],
-        [KeyboardButton(text="📊 Мой прогресс"), KeyboardButton(text="ℹ️ О репетиторе")]
+        [KeyboardButton(text="📊 Мой прогресс"), KeyboardButton(text="ℹ️ О репетиторе")],
+        [KeyboardButton(text="❓ Задать вопрос преподавателю")]
     ],
     resize_keyboard=True
 )
@@ -109,6 +110,109 @@ async def student_progress(message: types.Message):
                 await message.answer(f"📈 Твой прогресс:\n{result[0]}")
             else:
                 await message.answer("Ты не зарегистрирован! Введи /register")
+
+# ====== О репетиторе ======
+@dp.message(lambda message: message.text.strip().lower() == "ℹ️ о репетиторе")
+async def about_tutor(message: types.Message):
+    # Информация о репетиторе
+    tutor_info = (
+        "👨‍🏫 Здравствуйте, меня зовут Екатерина. Я репетитор по математике и русскому языку. Моя цель - помочь Вам улучшить свои навыки.\n"
+        "Если у тебя есть вопросы или нужно уточнение по домашке, прогрессу или расписанию - всегда обращайся!"
+    )
+
+    await message.answer(tutor_info)
+
+# ====== ЗАДАТЬ ВОПРОС ПРЕПОДАВАТЕЛЮ ======
+@dp.message(lambda message: message.text.strip().lower() == "❓ задать вопрос преподавателю")
+async def ask_question(message: types.Message):
+    # Запросить у ученика текст вопроса
+    await message.answer("Напиши свой вопрос, и преподаватель ответит тебе в ближайшее время.")
+
+# ====== ОБРАБОТКА ВОПРОСА УЧЕНИКА ======
+@dp.message(lambda message: message.text.strip() != "❓ задать вопрос преподавателю")
+async def save_and_notify_teacher(message: types.Message):
+    student_id = message.from_user.id
+    question = message.text.strip()
+
+    async with aiosqlite.connect("students.db") as db:
+        # Сохраняем вопрос в базе данных
+        await db.execute(
+            "INSERT INTO questions (student_id, question) VALUES (?, ?)",
+            (student_id, question)
+        )
+        await db.commit()
+
+    # Отправка уведомления преподавателю
+    teacher_message = f"Ученик с ID {student_id} задал вопрос:\n{question}"
+
+    await bot.send_message(ADMIN_ID, teacher_message)
+    await message.answer("Ваш вопрос был отправлен преподавателю. Он ответит вам в ближайшее время.")
+
+# Подключение к базе данных и создание таблицы для вопросов
+async def init_db():
+    async with aiosqlite.connect("students.db") as db:
+        await db.execute('''
+        CREATE TABLE IF NOT EXISTS students (
+            id INTEGER PRIMARY KEY,
+            name TEXT,
+            progress TEXT DEFAULT 'Нет данных',
+            homework TEXT DEFAULT 'Нет домашнего задания',
+            schedule TEXT DEFAULT 'Нет расписания'
+        )
+        ''')
+
+        await db.execute('''
+        CREATE TABLE IF NOT EXISTS questions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id INTEGER,
+            question TEXT,
+            answered BOOLEAN DEFAULT FALSE,
+            FOREIGN KEY(student_id) REFERENCES students(id)
+        )
+        ''')
+
+        await db.commit()
+
+# ====== ПРЕПОДАВАТЕЛЬ ПРОСМАТРИВАЕТ ВОПРОСЫ ======
+@dp.message(lambda message: message.text.strip().lower() == "📋 Просмотр вопросов")
+async def view_questions(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("⛔ У вас нет прав для использования этой команды.")
+        return
+
+    async with aiosqlite.connect("students.db") as db:
+        async with db.execute("SELECT id, student_id, question FROM questions WHERE answered = FALSE") as cursor:
+            questions = await cursor.fetchall()
+
+    if not questions:
+        await message.answer("Нет новых вопросов от учеников.")
+        return
+
+    for q in questions:
+        student_id, question = q[1], q[2]
+        await message.answer(f"Вопрос от ученика с ID {student_id}:\n{question}\n\nНапишите свой ответ.")
+
+# ====== ПРЕПОДАВАТЕЛЬ ОТВЕЧАЕТ НА ВОПРОС ======
+@dp.message(lambda message: message.text.strip() != "📋 Просмотр вопросов" and message.from_user.id == ADMIN_ID)
+async def answer_question(message: types.Message):
+    # Ответ преподавателя на вопрос
+    answer = message.text.strip()
+
+    async with aiosqlite.connect("students.db") as db:
+        async with db.execute("SELECT id, student_id, question FROM questions WHERE answered = FALSE LIMIT 1") as cursor:
+            question = await cursor.fetchone()
+
+        if question:
+            question_id, student_id, student_question = question
+            # Сохраняем ответ и помечаем вопрос как ответственный
+            await db.execute("UPDATE questions SET answered = TRUE WHERE id = ?", (question_id,))
+            await db.commit()
+
+            # Отправляем ответ ученику
+            await bot.send_message(student_id, f"Ответ на ваш вопрос:\n{answer}")
+            await message.answer(f"Ответ на вопрос от ученика с ID {student_id} был отправлен.")
+        else:
+            await message.answer("Нет вопросов, на которые можно ответить.")
 
 # Запуск бота
 async def main():
