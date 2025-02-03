@@ -68,7 +68,7 @@ menu = ReplyKeyboardMarkup(
 )
 
 # ====== КОМАНДА /START ======
-@dp.message_handler(commands=["start"])
+@dp.message(Command("start"))
 async def cmd_start(message: types.Message):
     user_id = message.from_user.id
     user_name = message.from_user.first_name
