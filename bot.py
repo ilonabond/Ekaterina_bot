@@ -13,6 +13,9 @@ TOKEN = os.getenv("BOT_TOKEN")
 if TOKEN is None:
     raise ValueError("BOT_TOKEN не найден в .env файле!")
 
+# ID преподавателя (замени на свой)
+ADMIN_ID = 123456789
+
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 
@@ -28,53 +31,164 @@ async def init_db():
         CREATE TABLE IF NOT EXISTS students (
             id INTEGER PRIMARY KEY,
             name TEXT,
-            progress TEXT
+            progress TEXT DEFAULT 'Нет данных',
+            homework TEXT DEFAULT 'Нет домашнего задания',
+            schedule TEXT DEFAULT 'Нет расписания'
         )
         ''')
         await db.commit()
 
 
-# Клавиатура главного меню (исправлено)
+# Клавиатура главного меню
 menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="📚 Домашние задания"), KeyboardButton(text="📆 Расписание")],
-        [KeyboardButton(text="📊 Прогресс"), KeyboardButton(text="ℹ️ О репетиторе")]
+        [KeyboardButton(text="📚 Моя домашка"), KeyboardButton(text="📆 Моё расписание")],
+        [KeyboardButton(text="📊 Мой прогресс"), KeyboardButton(text="ℹ️ О репетиторе")]
     ],
     resize_keyboard=True
 )
-# Команда /start
-@dp.message(Command("start"))
-async def start(message: types.Message):
-    user_name = message.from_user.first_name if message.from_user else "ученик"
-    await message.answer(f"Привет, {user_name}! 👋\nЯ – бот репетитора Екатерины. Чем могу помочь?", reply_markup=menu)
 
 
-# Команда /help
-@dp.message(Command("help"))
-async def help_cmd(message: types.Message):
-    await message.answer("Я могу отправлять тебе расписание, домашние задания и следить за твоим прогрессом.")
+# ====== РЕГИСТРАЦИЯ УЧЕНИКА ======
+@dp.message(Command("register"))
+async def register_student(message: types.Message):
+    user_id = message.from_user.id
+    user_name = message.from_user.first_name
+
+    async with aiosqlite.connect("students.db") as db:
+        await db.execute(
+            "INSERT INTO students (id, name) VALUES (?, ?) ON CONFLICT(id) DO NOTHING",
+            (user_id, user_name)
+        )
+        await db.commit()
+
+    await message.answer(f"✅ {user_name}, ты зарегистрирован! Теперь ты можешь пользоваться ботом.", reply_markup=menu)
 
 
-# Раздел «О репетиторе»
-@dp.message(lambda message: message.text.strip().lower() == "ℹ️ о репетиторе")
-async def about_teacher(message: types.Message):
-    await message.answer("Привет! Я Екатерина – репетитор по математике и русскому языку. Готовлю к ОГЭ и ЕГЭ. 📚")
+# ====== ПРОСМОТР РАСПИСАНИЯ ======
+@dp.message(lambda message: message.text.strip().lower() == "📆 моё расписание")
+async def show_schedule(message: types.Message):
+    user_id = message.from_user.id
+    async with aiosqlite.connect("students.db") as db:
+        async with db.execute("SELECT schedule FROM students WHERE id=?", (user_id,)) as cursor:
+            result = await cursor.fetchone()
+            if result:
+                await message.answer(f"📅 Твоё расписание:\n{result[0]}")
+            else:
+                await message.answer("Ты не зарегистрирован! Введи /register")
 
 
-# Раздел «Прогресс ученика»
-@dp.message(lambda message: message.text.strip().lower() == "📊 прогресс")
+# ====== ПРОСМОТР ДОМАШКИ ======
+@dp.message(lambda message: message.text.strip().lower() == "📚 моя домашка")
+async def show_homework(message: types.Message):
+    user_id = message.from_user.id
+    async with aiosqlite.connect("students.db") as db:
+        async with db.execute("SELECT homework FROM students WHERE id=?", (user_id,)) as cursor:
+            result = await cursor.fetchone()
+            if result:
+                await message.answer(f"📌 Твоя домашка:\n{result[0]}")
+            else:
+                await message.answer("Ты не зарегистрирован! Введи /register")
+
+
+# ====== ПРОСМОТР ПРОГРЕССА ======
+@dp.message(lambda message: message.text.strip().lower() == "📊 мой прогресс")
 async def student_progress(message: types.Message):
-    user_id = message.from_user.id if message.from_user else 0
+    user_id = message.from_user.id
     async with aiosqlite.connect("students.db") as db:
         async with db.execute("SELECT progress FROM students WHERE id=?", (user_id,)) as cursor:
             result = await cursor.fetchone()
             if result:
-                await message.answer(f"📈 Твой прогресс: {result[0]}")
+                await message.answer(f"📈 Твой прогресс:\n{result[0]}")
             else:
-                await message.answer("Данных пока нет. Заполню после первых занятий!")
+                await message.answer("Ты не зарегистрирован! Введи /register")
 
 
-# Запуск бота в aiogram v3
+# ====== ДОБАВЛЕНИЕ ПРОГРЕССА (ТОЛЬКО ДЛЯ АДМИНА) ======
+@dp.message(Command("update_progress"))
+async def update_progress(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("⛔ У вас нет прав для использования этой команды.")
+        return
+
+    await message.answer("Введите ID ученика и его новый прогресс через `|` (пример: `123456|Сдал тест на 90%`).")
+
+
+@dp.message(lambda message: "|" in message.text and message.from_user.id == ADMIN_ID)
+async def save_progress(message: types.Message):
+    try:
+        student_id, progress = message.text.split("|", 1)
+        student_id = int(student_id.strip())
+        progress = progress.strip()
+
+        async with aiosqlite.connect("students.db") as db:
+            await db.execute(
+                "UPDATE students SET progress=? WHERE id=?", (progress, student_id)
+            )
+            await db.commit()
+
+        await message.answer(f"✅ Прогресс ученика {student_id} обновлён: {progress}")
+    except ValueError:
+        await message.answer("❌ Неверный формат. Введите ID ученика и прогресс через `|`.")
+
+
+# ====== ДОБАВЛЕНИЕ ДОМАШКИ (ТОЛЬКО ДЛЯ АДМИНА) ======
+@dp.message(Command("update_homework"))
+async def update_homework(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("⛔ У вас нет прав для использования этой команды.")
+        return
+
+    await message.answer("Введите ID ученика и домашнее задание через `|` (пример: `123456|Сделать тест №3`).")
+
+
+@dp.message(lambda message: "|" in message.text and message.from_user.id == ADMIN_ID)
+async def save_homework(message: types.Message):
+    try:
+        student_id, homework = message.text.split("|", 1)
+        student_id = int(student_id.strip())
+        homework = homework.strip()
+
+        async with aiosqlite.connect("students.db") as db:
+            await db.execute(
+                "UPDATE students SET homework=? WHERE id=?", (homework, student_id)
+            )
+            await db.commit()
+
+        await message.answer(f"✅ Домашка ученика {student_id} обновлена: {homework}")
+    except ValueError:
+        await message.answer("❌ Неверный формат. Введите ID ученика и задание через `|`.")
+
+
+# ====== ДОБАВЛЕНИЕ РАСПИСАНИЯ (ТОЛЬКО ДЛЯ АДМИНА) ======
+@dp.message(Command("update_schedule"))
+async def update_schedule(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("⛔ У вас нет прав для использования этой команды.")
+        return
+
+    await message.answer("Введите ID ученика и расписание через `|` (пример: `123456|Занятие в среду 18:00`).")
+
+
+@dp.message(lambda message: "|" in message.text and message.from_user.id == ADMIN_ID)
+async def save_schedule(message: types.Message):
+    try:
+        student_id, schedule = message.text.split("|", 1)
+        student_id = int(student_id.strip())
+        schedule = schedule.strip()
+
+        async with aiosqlite.connect("students.db") as db:
+            await db.execute(
+                "UPDATE students SET schedule=? WHERE id=?", (schedule, student_id)
+            )
+            await db.commit()
+
+        await message.answer(f"✅ Расписание ученика {student_id} обновлено: {schedule}")
+    except ValueError:
+        await message.answer("❌ Неверный формат. Введите ID ученика и расписание через `|`.")
+
+
+# Запуск бота
 async def main():
     await init_db()  # Инициализация БД
     await dp.start_polling(bot)
