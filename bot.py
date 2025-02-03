@@ -14,7 +14,7 @@ if TOKEN is None:
     raise ValueError("BOT_TOKEN не найден в .env файле!")
 
 # ID преподавателя (замени на свой)
-ADMIN_ID = 123456789
+ADMIN_ID = 123456789  # Замените на ваш реальный ID
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -122,6 +122,13 @@ async def save_progress(message: types.Message):
         progress = progress.strip()
 
         async with aiosqlite.connect("students.db") as db:
+            # Проверка на существование ученика
+            async with db.execute("SELECT id FROM students WHERE id=?", (student_id,)) as cursor:
+                result = await cursor.fetchone()
+                if not result:
+                    await message.answer(f"❌ Ученик с ID {student_id} не найден в базе данных.")
+                    return
+
             await db.execute(
                 "UPDATE students SET progress=? WHERE id=?", (progress, student_id)
             )
@@ -150,6 +157,13 @@ async def save_homework(message: types.Message):
         homework = homework.strip()
 
         async with aiosqlite.connect("students.db") as db:
+            # Проверка на существование ученика
+            async with db.execute("SELECT id FROM students WHERE id=?", (student_id,)) as cursor:
+                result = await cursor.fetchone()
+                if not result:
+                    await message.answer(f"❌ Ученик с ID {student_id} не найден в базе данных.")
+                    return
+
             await db.execute(
                 "UPDATE students SET homework=? WHERE id=?", (homework, student_id)
             )
@@ -178,6 +192,13 @@ async def save_schedule(message: types.Message):
         schedule = schedule.strip()
 
         async with aiosqlite.connect("students.db") as db:
+            # Проверка на существование ученика
+            async with db.execute("SELECT id FROM students WHERE id=?", (student_id,)) as cursor:
+                result = await cursor.fetchone()
+                if not result:
+                    await message.answer(f"❌ Ученик с ID {student_id} не найден в базе данных.")
+                    return
+
             await db.execute(
                 "UPDATE students SET schedule=? WHERE id=?", (schedule, student_id)
             )
