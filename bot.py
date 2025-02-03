@@ -4,6 +4,8 @@ import aiosqlite
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from dotenv import load_dotenv
 import os
 
@@ -23,32 +25,8 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
-# Подключение к базе данных (асинхронное)
-async def init_db():
-    async with aiosqlite.connect("students.db") as db:
-        # Создание таблицы, если её нет
-        await db.execute('''
-        CREATE TABLE IF NOT EXISTS students (
-            id INTEGER PRIMARY KEY,
-            name TEXT,
-            progress TEXT DEFAULT 'Нет данных',
-            homework TEXT DEFAULT 'Нет домашнего задания',
-            schedule TEXT DEFAULT 'Нет расписания'
-        )
-        ''')
-        await db.commit()
-
-# Функция для добавления колонок, если их нет
-async def add_columns():
-    async with aiosqlite.connect("students.db") as db:
-        try:
-            # Добавление столбца 'homework', если его нет
-            await db.execute("ALTER TABLE students ADD COLUMN homework TEXT DEFAULT 'Нет домашнего задания'")
-            await db.execute("ALTER TABLE students ADD COLUMN schedule TEXT DEFAULT 'Нет расписания'")
-            await db.commit()
-        except Exception as e:
-            # Если столбцы уже существуют, это может вызвать исключение
-            print(f"Ошибка при добавлении колонок: {e}")
+class LoginState(StatesGroup):
+    waiting_for_id = State()
 
 start_menu = ReplyKeyboardMarkup(
     keyboard=[
@@ -67,6 +45,15 @@ menu = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
+admin_menu = ReplyKeyboardMarkup(
+    keyboard=[
+        [KeyboardButton(text="📋 Просмотр вопросов"), KeyboardButton(text="📈 Обновить прогресс")],
+        [KeyboardButton(text="📆 Обновить расписание"), KeyboardButton(text="📚 Обновить домашку")],
+        [KeyboardButton(text="ℹ️ О репетиторе")]
+    ],
+    resize_keyboard=True
+)
+
 # ====== КОМАНДА /START ======
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
@@ -77,10 +64,10 @@ async def cmd_start(message: types.Message):
     async with aiosqlite.connect("students.db") as db:
         async with db.execute("SELECT id FROM students WHERE id=?", (user_id,)) as cursor:
             result = await cursor.fetchone()
-            if result:
-                await message.answer(f"Привет, {user_name}! Ты уже зарегистрирован.", reply_markup=main_menu)
-            else:
-                await message.answer(f"Привет, {user_name}! Для начала зарегистрируйся.", reply_markup=start_menu)
+    if result:
+        await message.answer(f"Привет, {user_name}! Ты уже зарегистрирован.", reply_markup=main_menu)
+    else:
+        await message.answer(f"Привет, {user_name}! Для начала зарегистрируйся.", reply_markup=start_menu)
 
 
 # ====== РЕГИСТРАЦИЯ УЧЕНИКА ======
@@ -100,16 +87,33 @@ async def register_student(message: types.Message):
     await message.answer(f"✅ {user_name}, ты зарегистрирован! Теперь ты можешь пользоваться ботом.", reply_markup=menu)
 
 # ====== ВХОД ПО ID ======
-@dp.message(lambda message: message.text.strip().lower() == "🔑 войти")
-async def login_by_id(message: types.Message):
-    user_id = message.from_user.id
+@dp.message(F.text == "🔑 Войти")
+async def login_request(message: types.Message, state: FSMContext):
+    await message.answer("🔑 Введите ваш ID для входа:")
+    await state.set_state(LoginState.waiting_for_id)
+
+@dp.message(LoginState.waiting_for_id)
+async def process_login(message: types.Message, state: FSMContext):
+    user_id = message.text.strip()
+
+    if not user_id.isdigit():
+        await message.answer("⛔ ID должен быть числом! Попробуйте снова.")
+        return
+
+    user_id = int(user_id)  # Преобразуем в число
+
     async with aiosqlite.connect("students.db") as db:
         async with db.execute("SELECT id FROM students WHERE id=?", (user_id,)) as cursor:
-            result = await cursor.fetchone()
-            if result:
-                await message.answer("Ты успешно вошёл!", reply_markup=main_menu)
-            else:
-                await message.answer("Ты не зарегистрирован! Введи /register для регистрации.")
+            student = await cursor.fetchone()
+
+    await state.clear()  # Очищаем состояние
+
+    if user_id == ADMIN_ID:
+        await message.answer("✅ Вы вошли как преподаватель!", reply_markup=admin_menu)
+    elif student:
+        await message.answer("✅ Вход выполнен! Добро пожаловать в личный кабинет.", reply_markup=menu)
+    else:
+        await message.answer("⛔ ID не найден в базе. Возможно, вы не зарегистрированы.\nПопробуйте /start для регистрации.")
 
 
 # Просмотр расписания
@@ -235,6 +239,15 @@ async def init_db():
         ''')
 
         await db.commit()
+
+async def add_columns():
+    async with aiosqlite.connect("students.db") as db:
+        try:
+            await db.execute("ALTER TABLE students ADD COLUMN homework TEXT DEFAULT 'Нет домашнего задания'")
+            await db.execute("ALTER TABLE students ADD COLUMN schedule TEXT DEFAULT 'Нет расписания'")
+            await db.commit()
+        except Exception as e:
+            print(f"Ошибка при добавлении колонок: {e}")
 
 # ====== ПРЕПОДАВАТЕЛЬ ПРОСМАТРИВАЕТ ВОПРОСЫ ======
 @dp.message(lambda message: message.text.strip().lower() == "📋 Просмотр вопросов")
