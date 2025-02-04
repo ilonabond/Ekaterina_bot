@@ -212,7 +212,7 @@ async def about_tutor(message: types.Message):
 
 @dp.message(F.text == "📋 Список студентов")
 async def list_students(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id not in ADMIN_ID:
         await message.answer("⛔ У вас нет прав для просмотра списка студентов.")
         return
 
