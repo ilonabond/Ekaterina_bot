@@ -95,6 +95,10 @@ async def login_request(message: types.Message, state: FSMContext):
 @dp.message(LoginState.waiting_for_id)
 async def process_login(message: types.Message, state: FSMContext):
     student_id = message.text.strip()
+    if student_id == str(ADMIN_ID):
+        await message.answer("✅ Вход выполнен! Добро пожаловать, преподаватель!", reply_markup=admin_menu)
+        await state.clear()
+        return
 
     async with aiosqlite.connect("students.db") as db:
         async with db.execute("SELECT id FROM students WHERE student_id=?", (student_id,)) as cursor:
