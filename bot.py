@@ -78,7 +78,7 @@ async def cmd_start(message: types.Message):
 async def register_student(message: types.Message):
     user_id = message.from_user.id
     user_name = message.from_user.first_name
-    student_id = random.randint(10000, 99999)  # Генерируем персональный ID
+    student_id = f"{user_id}{random.randint(100, 999)}"  # Генерируем персональный ID
 
     async with aiosqlite.connect("students.db") as db:
         await db.execute(
