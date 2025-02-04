@@ -36,9 +36,11 @@ class RegisterState(StatesGroup):
 class UpdateState(StatesGroup):
     waiting_for_student_id = State()
     waiting_for_new_value = State()
+    update_type = State()
 
 class HomeworkState(StatesGroup):
     waiting_for_homework = State()
+
 
 start_menu = ReplyKeyboardMarkup(
     keyboard=[
@@ -175,8 +177,54 @@ async def receive_homework(message: types.Message, state: FSMContext):
         await db.commit()
 
     await bot.send_message(ADMIN_ID, f"📌 Ученик {student_id} отправил домашку.")
-    await message.answer("✅ Домашка отправлена!")
+    await message.answer("✅ Домашка отправлена!", reply_markup=student_menu)
     await state.clear()
+
+
+# Обновление данных ученика (прогресс, расписание, домашка)
+@dp.message(F.text.in_(["📈 Обновить прогресс", "📆 Обновить расписание", "📚 Обновить домашку"]))
+async def update_data_prompt(message: types.Message, state: FSMContext):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("⛔ У вас нет прав для использования этой команды.")
+        return
+
+    update_type = message.text
+    await state.update_data(update_type=update_type)
+    await state.set_state(UpdateState.waiting_for_student_id)
+    await message.answer("Введите ID ученика, для которого хотите обновить данные:")
+
+
+@dp.message(UpdateState.waiting_for_student_id)
+async def update_student_data(message: types.Message, state: FSMContext):
+    student_id = message.text.strip()
+    if not student_id.isdigit():
+        await message.answer("⚠️ ID должен быть числом! Попробуйте снова.")
+        return
+
+    await state.update_data(student_id=int(student_id))
+    await state.set_state(UpdateState.waiting_for_new_value)
+    await message.answer("Введите новое значение:")
+
+
+@dp.message(UpdateState.waiting_for_new_value)
+async def save_updated_data(message: types.Message, state: FSMContext):
+    new_value = message.text.strip()
+    data = await state.get_data()
+    student_id = data["student_id"]
+    update_type = data["update_type"]
+
+    async with aiosqlite.connect("students.db") as db:
+        if update_type == "📈 Обновить прогресс":
+            await db.execute("UPDATE students SET progress = ? WHERE id = ?", (new_value, student_id))
+        elif update_type == "📆 Обновить расписание":
+            await db.execute("UPDATE students SET schedule = ? WHERE id = ?", (new_value, student_id))
+        elif update_type == "📚 Обновить домашку":
+            await db.execute("UPDATE students SET homework = ? WHERE id = ?", (new_value, student_id))
+        await db.commit()
+
+    await state.clear()
+    await message.answer("✅ Данные успешно обновлены!")
+
 
 # 🔹 Напоминания ученикам
 async def send_reminders():
@@ -192,7 +240,7 @@ async def send_reminders():
             try:
                 lesson_time = datetime.strptime(schedule, "%Y-%m-%d %H:%M")
                 if lesson_time - timedelta(hours=2) <= now < lesson_time - timedelta(hours=1, minutes=55):
-                    await bot.send_message(student_id, "📌 Напоминание: через 2 часа у тебя урок.")
+                    await bot.send_message(student_id, "📌 Напоминание: через 2 часа у тебя урок.Не забудь выполнить домашку.")
                 elif lesson_time + timedelta(minutes=5) <= now < lesson_time + timedelta(minutes=10):
                     await bot.send_message(student_id, "💳 Напоминание: не забудь оплатить урок.")
             except ValueError:
@@ -212,7 +260,7 @@ async def about_tutor(message: types.Message):
 
 @dp.message(F.text == "📋 Список студентов")
 async def list_students(message: types.Message):
-    if message.from_user.id not in ADMIN_ID:
+    if message.from_user.id != ADMIN_ID:
         await message.answer("⛔ У вас нет прав для просмотра списка студентов.")
         return
 
