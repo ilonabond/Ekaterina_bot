@@ -19,6 +19,8 @@ if not TOKEN:
 
 ADMIN_ID = 123456789  # Укажи свой Telegram ID
 
+API_TOKEN = TOKEN
+
 # Логирование
 logging.basicConfig(level=logging.INFO)
 
@@ -165,20 +167,40 @@ async def receive_homework(message: types.Message, state: FSMContext):
     student_id = message.from_user.id
     text = message.text or ""
 
+    # Переменная для хранения file_id
     file_id = None
+
+    # Проверка, если это фото
     if message.photo:
-        file_id = message.photo[-1].file_id
+        file_id = message.photo[-1].file_id  # Получаем наибольшее качество фото
+        # Получение информации о файле (если нужно для ссылки)
+        file_info = await bot.get_file(file_id)
+        file_url = f'https://api.telegram.org/file/bot{API_TOKEN}/{file_info.file_path}'  # Генерация ссылки на фото
+
+    # Проверка, если это документ
     elif message.document:
         file_id = message.document.file_id
+        # Получение информации о файле
+        file_info = await bot.get_file(file_id)
+        file_url = f'https://api.telegram.org/file/bot{API_TOKEN}/{file_info.file_path}'  # Генерация ссылки на документ
+    else:
+        file_url = None  # Нет вложений (например, только текст)
 
+    # Сохранение домашки в базе данных
     async with aiosqlite.connect("students.db") as db:
-        await db.execute("INSERT INTO homeworks (student_id, text, file_id) VALUES (?, ?, ?)",
-                         (student_id, text, file_id))
+        await db.execute("INSERT INTO homeworks (student_id, text, file_id, file_url) VALUES (?, ?, ?, ?)",
+                         (student_id, text, file_id, file_url))
         await db.commit()
 
-    await bot.send_message(ADMIN_ID, f"📌 Ученик {student_id} отправил домашку.")
+    # Уведомление администратора
+    await bot.send_message(ADMIN_ID, f"📌 Ученик {student_id} отправил домашку. Статус: {'с файлом' if file_url else 'без файла'}")
+
+    # Ответ ученику, что домашка отправлена
     await message.answer("✅ Домашка отправлена!", reply_markup=student_menu)
+
+    # Очистка состояния
     await state.clear()
+
 
 
 # Обновление данных ученика (прогресс, расписание, домашка)
