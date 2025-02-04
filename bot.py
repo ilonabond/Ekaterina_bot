@@ -17,7 +17,7 @@ TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
     raise ValueError("BOT_TOKEN не найден в .env файле!")
 
-ADMIN_ID = 123456789  # Укажи свой Telegram ID
+ADMIN_ID = [123456789]  # Укажи свой Telegram ID
 
 # Логирование
 logging.basicConfig(level=logging.INFO)
@@ -222,9 +222,9 @@ async def list_students(message: types.Message):
 
     if not students:
         await message.answer("📂 В базе пока нет зарегистрированных студентов.")
-    else:
-        student_list = "\n".join([f"👤 {name} (TG ID: {user_id}, Student ID: {student_id})" for user_id, name, student_id in students])
-        await message.answer(f"📋 Список студентов:\n\n{student_list}")
+
+    student_list = "\n".join([f"👤 {name} (TG ID: {user_id}, Student ID: {student_id})" for user_id, name, student_id in students])
+    await message.answer(f"📋 Список студентов:\n\n{student_list}")
 
 # 🔹 Запуск бота
 async def main():
