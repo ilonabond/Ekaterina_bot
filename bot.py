@@ -148,7 +148,7 @@ async def student_schedule(message: types.Message):
         await message.answer("У тебя нет расписания.")
 
 # 🔹 Отправка домашки учеником
-@dp.message(F.text == "📤 Отправить домашку")
+@dp.message(F.text == "📤 Отправить ДЗ")
 async def request_homework(message: types.Message, state: FSMContext):
     await message.answer("Пришлите домашнее задание (текст, фото или документ).")
     await state.set_state(HomeworkState.waiting_for_homework)
