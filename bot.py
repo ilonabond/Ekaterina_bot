@@ -58,6 +58,7 @@ student_menu = ReplyKeyboardMarkup(
 
 admin_menu = ReplyKeyboardMarkup(
     keyboard=[
+        [KeyboardButton(text="📋 Список студентов")],
         [KeyboardButton(text="📋 Просмотреть домашки"), KeyboardButton(text="📈 Обновить прогресс")],
         [KeyboardButton(text="📆 Обновить расписание"), KeyboardButton(text="📚 Обновить домашку")]
     ],
@@ -208,6 +209,22 @@ async def about_tutor(message: types.Message):
         "📝 Если у тебя есть вопросы по домашнему заданию, расписанию или прогрессу – не стесняйся обращаться!"
     )
     await message.answer(tutor_info)
+
+@dp.message(F.text == "📋 Список студентов")
+async def list_students(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("⛔ У вас нет прав для просмотра списка студентов.")
+        return
+
+    async with aiosqlite.connect("students.db") as db:
+        async with db.execute("SELECT id, name, student_id FROM students") as cursor:
+            students = await cursor.fetchall()
+
+    if not students:
+        await message.answer("📂 В базе пока нет зарегистрированных студентов.")
+    else:
+        student_list = "\n".join([f"👤 {name} (TG ID: {user_id}, Student ID: {student_id})" for user_id, name, student_id in students])
+        await message.answer(f"📋 Список студентов:\n\n{student_list}")
 
 # 🔹 Запуск бота
 async def main():
