@@ -1,7 +1,6 @@
 import logging
 import asyncio
 import aiosqlite
-import random
 from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
@@ -17,7 +16,7 @@ TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
     raise ValueError("BOT_TOKEN не найден в .env файле!")
 
-ADMIN_ID = 123456789  # Укажи свой Telegram ID
+ADMIN_PHONE = "+79818862605"  # Укажи свой Telegram ID
 
 API_TOKEN = TOKEN
 
@@ -46,11 +45,13 @@ class HomeworkState(StatesGroup):
 
 start_menu = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="🔑 Регистрация"), KeyboardButton(text="🔑 Войти")],
+        [KeyboardButton(text="🔑 Регистрация")],
+        [KeyboardButton(text="🔑 Войти")],
         [KeyboardButton(text="ℹ️ О репетиторе")]
     ],
     resize_keyboard=True
 )
+
 
 student_menu = ReplyKeyboardMarkup(
     keyboard=[
@@ -75,38 +76,49 @@ admin_menu = ReplyKeyboardMarkup(
 async def cmd_start(message: types.Message):
     await message.answer("Привет! Выберите действие:", reply_markup=start_menu)
 
-# ====== РЕГИСТРАЦИЯ ======
 @dp.message(F.text == "🔑 Регистрация")
-async def register_student(message: types.Message):
+async def register_student(message: types.Message, state: FSMContext):
+    await message.answer("Пожалуйста, отправьте свой номер телефона.", reply_markup=ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="Отправить номер телефона", request_contact=True)]],
+        resize_keyboard=True
+    ))
+    await state.set_state(RegisterState.waiting_for_name)  # Новый state для получения номера телефона
+
+@dp.message(RegisterState.waiting_for_name, F.contact)
+async def process_registration(message: types.Message, state: FSMContext):
+    phone_number = message.contact.phone_number
     user_id = message.from_user.id
     user_name = message.from_user.first_name
-    student_id = f"{user_id}{random.randint(100, 999)}"  # Генерируем персональный ID
 
     async with aiosqlite.connect("students.db") as db:
         await db.execute(
-            "INSERT INTO students (id, name, student_id) VALUES (?, ?, ?) ON CONFLICT(id) DO NOTHING",
-            (user_id, user_name, student_id)
+            "INSERT INTO students (id, name, phone) VALUES (?, ?, ?) ON CONFLICT(id) DO NOTHING",
+            (user_id, user_name, phone_number)
         )
         await db.commit()
 
-    await message.answer(f"✅ {user_name}, ты зарегистрирован!\nТвой ID: `{student_id}`\nИспользуй его для входа.", reply_markup=student_menu)
+    await message.answer(f"✅ {user_name}, ты зарегистрирован!\nТвой номер: `{phone_number}`", reply_markup=student_menu)
+    await state.clear()
 
 # ====== ВХОД ======
 @dp.message(F.text == "🔑 Войти")
 async def login_request(message: types.Message, state: FSMContext):
-    await message.answer("Введите ваш ID:")
-    await state.set_state(LoginState.waiting_for_id)
+    await message.answer("Пожалуйста, отправьте свой номер телефона для входа.", reply_markup=ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="Отправить номер телефона", request_contact=True)]],
+        resize_keyboard=True
+    ))
+    await state.set_state(LoginState.waiting_for_id)  # Новый state для получения номера телефона
 
-@dp.message(LoginState.waiting_for_id)
+@dp.message(LoginState.waiting_for_id, F.contact)
 async def process_login(message: types.Message, state: FSMContext):
-    student_id = message.text.strip()
-    if student_id == str(ADMIN_ID):
+    phone_number = message.contact.phone_number
+    if phone_number == str(ADMIN_PHONE):
         await message.answer("✅ Вход выполнен! Добро пожаловать, преподаватель!", reply_markup=admin_menu)
         await state.clear()
         return
 
     async with aiosqlite.connect("students.db") as db:
-        async with db.execute("SELECT id FROM students WHERE student_id=?", (student_id,)) as cursor:
+        async with db.execute("SELECT id FROM students WHERE phone=?", (phone_number,)) as cursor:
             student = await cursor.fetchone()
 
     await state.clear()
@@ -114,49 +126,40 @@ async def process_login(message: types.Message, state: FSMContext):
     if student:
         await message.answer("✅ Вход выполнен!", reply_markup=student_menu)
     else:
-        await message.answer("⛔ ID не найден!")
-
+        await message.answer("⛔ Номер не найден! Зарегистрируйтесь сначала.")
 
 # 🔹 Просмотр домашки
 @dp.message(F.text == "📚 Моя домашка")
 async def show_homework(message: types.Message):
-    user_id = message.from_user.id
+    phone_number = message.contact.phone_number
     async with aiosqlite.connect("students.db") as db:
-        async with db.execute("SELECT homework FROM students WHERE id=?", (user_id,)) as cursor:
+        async with db.execute("SELECT homework FROM students WHERE phone_number=?", (phone_number,)) as cursor:
             result = await cursor.fetchone()
 
-    if result and result[0] != "Нет домашнего задания":
-        await message.answer(f"📌 Твоя домашка:\n{result[0]}")
-    else:
-        await message.answer("У тебя нет загруженной домашки.")
+    await message.answer(f"📌 Твоя домашка:\n{result[0] if result else 'Нет домашнего задания'}")
 
 # 🔹 Просмотр прогресса
 @dp.message(F.text == "📊 Мой прогресс")
 async def student_progress(message: types.Message):
-    user_id = message.from_user.id
+    phone_number = message.contact.phone_number
     async with aiosqlite.connect("students.db") as db:
-        async with db.execute("SELECT progress FROM students WHERE id=?", (user_id,)) as cursor:
+        async with db.execute("SELECT progress FROM students WHERE phone_number=?", (phone_number,)) as cursor:
             result = await cursor.fetchone()
 
-    if result and result[0] != "Нет данных":
-        await message.answer(f"📈 Твой прогресс:\n{result[0]}")
-    else:
-        await message.answer("Прогресс пока не обновлён.")
+    await message.answer(f"📈 Твой прогресс:\n{result[0] if result else 'Нет данных'}")
 
 # 🔹 Просмотр расписания
 @dp.message(F.text == "📆 Моё расписание")
 async def student_schedule(message: types.Message):
-    user_id = message.from_user.id
+    phone_number = message.contact.phone_number
     async with aiosqlite.connect("students.db") as db:
-        async with db.execute("SELECT schedule FROM students WHERE id=?", (user_id,)) as cursor:
+        async with db.execute("SELECT schedule FROM students WHERE phone_number=?", (phone_number,)) as cursor:
             result = await cursor.fetchone()
 
-    if result and result[0] != "Нет расписания":
-        await message.answer(f"📆 Твоё расписание:\n{result[0]}")
-    else:
-        await message.answer("У тебя нет расписания.")
+    await message.answer(f"📆 Твоё расписание:\n{result[0] if result else 'Нет расписания'}")
 
-# 🔹 Отправка домашки учеником
+
+# ====== ОТПРАВКА ДОМАШКИ ======
 @dp.message(F.text == "📤 Отправить ДЗ")
 async def request_homework(message: types.Message, state: FSMContext):
     await message.answer("Пришлите домашнее задание (текст, фото или документ).")
@@ -164,111 +167,85 @@ async def request_homework(message: types.Message, state: FSMContext):
 
 @dp.message(HomeworkState.waiting_for_homework, F.content_type.in_(['text', 'photo', 'document']))
 async def receive_homework(message: types.Message, state: FSMContext):
-    student_id = message.from_user.id
+    phone_number = message.contact.phone_number
     text = message.text or ""
 
-    # Переменная для хранения file_id
     file_id = None
+    file_url = None
 
-    # Проверка, если это фото
     if message.photo:
-        file_id = message.photo[-1].file_id  # Получаем наибольшее качество фото
-        # Получение информации о файле (если нужно для ссылки)
-        file_info = await bot.get_file(file_id)
-        file_url = f'https://api.telegram.org/file/bot{API_TOKEN}/{file_info.file_path}'  # Генерация ссылки на фото
-
-    # Проверка, если это документ
+        file_id = message.photo[-1].file_id
     elif message.document:
         file_id = message.document.file_id
-        # Получение информации о файле
-        file_info = await bot.get_file(file_id)
-        file_url = f'https://api.telegram.org/file/bot{API_TOKEN}/{file_info.file_path}'  # Генерация ссылки на документ
-    else:
-        file_url = None  # Нет вложений (например, только текст)
 
-    # Сохранение домашки в базе данных
     async with aiosqlite.connect("students.db") as db:
-        await db.execute("INSERT INTO homeworks (student_id, text, file_id, file_url) VALUES (?, ?, ?, ?)",
-                         (student_id, text, file_id, file_url))
+        await db.execute("INSERT INTO homeworks (student_phone, text, file_id, file_url) VALUES (?, ?, ?, ?)",
+                         (phone_number, text, file_id, file_url))
         await db.commit()
 
-    # Уведомление администратора
-    await bot.send_message(ADMIN_ID, f"📌 Ученик {student_id} отправил домашку. Статус: {'с файлом' if file_url else 'без файла'}")
-
-    # Ответ ученику, что домашка отправлена
     await message.answer("✅ Домашка отправлена!", reply_markup=student_menu)
-
-    # Очистка состояния
     await state.clear()
 
-
-
-# Обновление данных ученика (прогресс, расписание, домашка)
 @dp.message(F.text.in_(["📈 Обновить прогресс", "📆 Обновить расписание", "📚 Обновить домашку"]))
 async def update_data_prompt(message: types.Message, state: FSMContext):
-    if message.from_user.id != ADMIN_ID:
-        await message.answer("⛔ У вас нет прав для использования этой команды.")
+    if message.contact.phone_number != ADMIN_PHONE:
+        await message.answer("⛔ У вас нет прав для этой команды.")
         return
 
-    update_type = message.text
-    await state.update_data(update_type=update_type)
-    await state.set_state(UpdateState.waiting_for_student_id)
-    await message.answer("Введите ID ученика, для которого хотите обновить данные:")
-
+    await state.update_data(update_type=message.text)
+    await state.set_state(UpdateState.waiting_for_student_phone)
+    await message.answer("Введите номер телефона ученика:")
 
 @dp.message(UpdateState.waiting_for_student_id)
 async def update_student_data(message: types.Message, state: FSMContext):
-    student_id = message.text.strip()
-    if not student_id.isdigit():
-        await message.answer("⚠️ ID должен быть числом! Попробуйте снова.")
-        return
-
-    await state.update_data(student_id=int(student_id))
+    phone_number = message.text.strip()
+    await state.update_data(student_phone=phone_number)
     await state.set_state(UpdateState.waiting_for_new_value)
     await message.answer("Введите новое значение:")
 
 
 @dp.message(UpdateState.waiting_for_new_value)
-async def save_updated_data(message: types.Message, state: FSMContext):
+async def update_value(message: types.Message, state: FSMContext):
+    user_data = await state.get_data()
+    student_phone = user_data['student_phone']
     new_value = message.text.strip()
-    data = await state.get_data()
-    student_id = data["student_id"]
-    update_type = data["update_type"]
+    update_type = user_data['update_type']
 
     async with aiosqlite.connect("students.db") as db:
         if update_type == "📈 Обновить прогресс":
-            await db.execute("UPDATE students SET progress = ? WHERE id = ?", (new_value, student_id))
+            await db.execute("UPDATE students SET progress=? WHERE phone=?", (new_value, student_phone))
         elif update_type == "📆 Обновить расписание":
-            await db.execute("UPDATE students SET schedule = ? WHERE id = ?", (new_value, student_id))
+            await db.execute("UPDATE students SET schedule=? WHERE phone=?", (new_value, student_phone))
         elif update_type == "📚 Обновить домашку":
-            await db.execute("UPDATE students SET homework = ? WHERE id = ?", (new_value, student_id))
+            await db.execute("UPDATE students SET homework=? WHERE phone=?", (new_value, student_phone))
         await db.commit()
 
+    await message.answer("✅ Данные обновлены!", reply_markup=admin_menu)
     await state.clear()
-    await message.answer("✅ Данные успешно обновлены!")
-
 
 # 🔹 Напоминания ученикам
 async def send_reminders():
     while True:
         now = datetime.now()
         async with aiosqlite.connect("students.db") as db:
-            async with db.execute("SELECT id, schedule FROM students") as cursor:
+            async with db.execute("SELECT phone, schedule FROM students") as cursor:
                 students = await cursor.fetchall()
 
-        for student_id, schedule in students:
+        for phone_number, schedule in students:
             if not schedule or schedule == "Нет расписания":
                 continue
             try:
                 lesson_time = datetime.strptime(schedule, "%Y-%m-%d %H:%M")
+                # Напоминание за 2 часа до урока о том, что урок скоро и надо сделать домашку
                 if lesson_time - timedelta(hours=2) <= now < lesson_time - timedelta(hours=1, minutes=55):
-                    await bot.send_message(student_id, "📌 Напоминание: через 2 часа у тебя урок.Не забудь выполнить домашку.")
+                    await bot.send_message(phone_number, "📌 Напоминание: через 2 часа у тебя урок. Не забудь выполнить домашку.")
+                # Напоминание за 5-10 минут после урока о необходимости оплаты
                 elif lesson_time + timedelta(minutes=5) <= now < lesson_time + timedelta(minutes=10):
-                    await bot.send_message(student_id, "💳 Напоминание: не забудь оплатить урок.")
+                    await bot.send_message(phone_number, "💳 Напоминание: не забудь оплатить урок.")
             except ValueError:
                 continue
 
-        await asyncio.sleep(300)
+        await asyncio.sleep(300)  # Пауза между проверками (5 м
 
 # ====== О РЕПЕТИТОРЕ ======
 @dp.message(F.text == "ℹ️ О репетиторе")
@@ -282,18 +259,18 @@ async def about_tutor(message: types.Message):
 
 @dp.message(F.text == "📋 Список студентов")
 async def list_students(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.phone_number != ADMIN_PHONE:
         await message.answer("⛔ У вас нет прав для просмотра списка студентов.")
         return
 
     async with aiosqlite.connect("students.db") as db:
-        async with db.execute("SELECT id, name, student_id FROM students") as cursor:
+        async with db.execute("SELECT phone, name FROM students") as cursor:
             students = await cursor.fetchall()
 
     if not students:
         await message.answer("📂 В базе пока нет зарегистрированных студентов.")
 
-    student_list = "\n".join([f"👤 {name} (TG ID: {user_id}, Student ID: {student_id})" for user_id, name, student_id in students])
+    student_list = "\n".join([f"👤 {name} (Телефон: {phone})" for phone, name in students])
     await message.answer(f"📋 Список студентов:\n\n{student_list}")
 
 # 🔹 Запуск бота
@@ -301,16 +278,22 @@ async def main():
     async with aiosqlite.connect("students.db") as db:
         await db.execute("""
         CREATE TABLE IF NOT EXISTS students (
-            id INTEGER PRIMARY KEY, name TEXT, progress TEXT DEFAULT 'Нет данных', 
-            schedule TEXT DEFAULT 'Нет расписания', homework TEXT DEFAULT 'Нет домашнего задания'
+            phone TEXT PRIMARY KEY, 
+            name TEXT, 
+            progress TEXT DEFAULT 'Нет данных', 
+            schedule TEXT DEFAULT 'Нет расписания', 
+            homework TEXT DEFAULT 'Нет домашнего задания'
         )""")
         await db.execute("""
         CREATE TABLE IF NOT EXISTS homeworks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT, student_id INTEGER, text TEXT, file_id TEXT
+            id INTEGER PRIMARY KEY AUTOINCREMENT, 
+            student_phone TEXT, 
+            text TEXT, 
+            file_id TEXT,
+            FOREIGN KEY (student_phone) REFERENCES students (phone)
         )""")
         await db.commit()
 
-    asyncio.create_task(send_reminders())
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
