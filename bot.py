@@ -99,7 +99,7 @@ async def process_registration(message: types.Message, state: FSMContext):
         )
         await db.commit()
 
-    await message.answer(f"✅ {user_name}, ты зарегистрирован!\n📞 Твой номер: `{phone_number}`", reply_markup=student_menu)
+    await message.answer(f"✅ {user_name}, твой профиль зарегистрирован!\n📞 Твой номер: `{phone_number}`", reply_markup=student_menu)
     await state.clear()
 
 # ====== ВХОД ======
