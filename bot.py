@@ -138,32 +138,42 @@ async def process_login(message: types.Message, state: FSMContext):
 # ====== Домашка и Расписание ======
 @dp.message(F.text == "📚 Моя домашка")
 async def show_homework(message: types.Message):
-    phone_number = message.contact.phone_number
-    async with aiosqlite.connect("students.db") as db:
-        async with db.execute("SELECT homework FROM students WHERE phone=?", (phone_number,)) as cursor:
-            result = await cursor.fetchone()
+    if message.contact:
+        phone_number = message.contact.phone_number
+        async with aiosqlite.connect("students.db") as db:
+            async with db.execute("SELECT homework FROM students WHERE phone=?", (phone_number,)) as cursor:
+                result = await cursor.fetchone()
 
-    homework_text = result[0] if result else "Нет домашнего задания"
-    await message.answer(f"📌 Твоя домашка:\n{homework_text}")
+        homework_text = result[0] if result else "Нет домашнего задания"
+        await message.answer(f"📌 Твоя домашка:\n{homework_text}")
+    else:
+        await message.answer("Пожалуйста, отправь свой контакт.")
 
 @dp.message(F.text == "📆 Моё расписание")
 async def student_schedule(message: types.Message):
-    phone_number = message.contact.phone_number
-    async with aiosqlite.connect("students.db") as db:
-        async with db.execute("SELECT schedule FROM students WHERE phone=?", (phone_number,)) as cursor:
-            result = await cursor.fetchone()
+    if message.contact:
+        phone_number = message.contact.phone_number
+        async with aiosqlite.connect("students.db") as db:
+            async with db.execute("SELECT schedule FROM students WHERE phone=?", (phone_number,)) as cursor:
+                result = await cursor.fetchone()
 
-    await message.answer(f"📆 Твоё расписание:\n{result[0] if result else 'Нет расписания'}")
+        await message.answer(f"📆 Твоё расписание:\n{result[0] if result else 'Нет расписания'}")
+    else:
+        await message.answer("Пожалуйста, отправь свой контакт.")
 
 # ====== ПРОГРЕСС ======
 @dp.message(F.text == "📊 Мой прогресс")
 async def view_progress(message: types.Message):
-    phone_number = message.contact.phone_number
-    async with aiosqlite.connect("students.db") as db:
-        async with db.execute("SELECT progress FROM students WHERE phone=?", (phone_number,)) as cursor:
-            result = await cursor.fetchone()
-    progress = result[0] if result else "Нет данных о прогрессе"
-    await message.answer(f"📈 Твой прогресс:\n{progress}")
+    if message.contact:
+        phone_number = message.contact.phone_number
+        async with aiosqlite.connect("students.db") as db:
+            async with db.execute("SELECT progress FROM students WHERE phone=?", (phone_number,)) as cursor:
+                result = await cursor.fetchone()
+        progress = result[0] if result else "Нет данных о прогрессе"
+        await message.answer(f"📈 Твой прогресс:\n{progress}")
+    else:
+        await message.answer("Пожалуйста, отправь свой контакт.")
+
 
 # ====== ОТПРАВКА ДЗ ======
 @dp.message(F.text == "📤 Отправить ДЗ")
