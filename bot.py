@@ -1,6 +1,8 @@
 import logging
 import asyncio
 import aiosqlite
+import pytz
+from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.filters import Command
@@ -8,6 +10,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from dotenv import load_dotenv
 import os
+
+MOSCOW_TZ = pytz.timezone("Europe/Moscow")  # Устанавливаем
 
 # Загрузка токена из .env
 load_dotenv()
@@ -38,7 +42,7 @@ class DeleteStudentState(StatesGroup):
     waiting_for_login = State()
 
 class UpdateState(StatesGroup):
-    waiting_for_student_phone = State()
+    waiting_for_student_login = State()
     waiting_for_new_value = State()
     update_type = State()
 
@@ -77,7 +81,7 @@ async def cmd_start(message: types.Message):
 # ====== ВХОД ======
 @dp.message(F.text == "🔑 Войти")
 async def login_request(message: types.Message, state: FSMContext):
-    await message.answer("Введите ваш логин (число):")
+    await message.answer("Введите ваш логин (число, например: `12345`):")
     await state.set_state(LoginState.waiting_for_login)
 
 @dp.message(LoginState.waiting_for_login)
@@ -87,7 +91,7 @@ async def process_login(message: types.Message, state: FSMContext):
         return
 
     await state.update_data(login=message.text)
-    await message.answer("Введите ваш пароль:")
+    await message.answer("Введите ваш пароль (число, например: `67890`):")
     await state.set_state(LoginState.waiting_for_password)
 
 @dp.message(LoginState.waiting_for_password)
@@ -98,7 +102,6 @@ async def process_password(message: types.Message, state: FSMContext):
 
     data = await state.get_data()
     login, password = data["login"], message.text
-
 
     if message.from_user.id == ADMIN_ID:
         await message.answer("✅ Вход выполнен! Добро пожаловать, преподаватель!", reply_markup=admin_menu)
@@ -265,7 +268,7 @@ async def view_homeworks(message: types.Message):
     await message.answer(f"📚 Домашние задания:\n\n{homework_list}")
 
 
-@dp.message(lambda message: message.text in ["📈 Обновить прогресс", "📆 Обновить расписание", "📚 Обновить домашку"])
+@dp.message(F.text.in_(["📈 Обновить прогресс", "📆 Обновить расписание", "📚 Обновить домашку"]))
 async def update_student_info(message: types.Message, state: FSMContext):
     if message.from_user.id != ADMIN_ID:
         return
@@ -274,15 +277,21 @@ async def update_student_info(message: types.Message, state: FSMContext):
     await state.update_data(update_type=update_type)
 
     await message.answer("Введите логин ученика:")
-    await state.set_state(UpdateState.waiting_for_student_phone)
+    await state.set_state(UpdateState.waiting_for_student_login)
 
-
-@dp.message(UpdateState.waiting_for_student_phone)
+@dp.message(UpdateState.waiting_for_student_login)
 async def get_student_login(message: types.Message, state: FSMContext):
     await state.update_data(student_login=message.text.strip())
-    await message.answer("Введите новое значение:")
-    await state.set_state(UpdateState.waiting_for_new_value)
 
+    update_type = (await state.get_data()).get("update_type")
+    if update_type == "schedule":
+        await message.answer("Введите расписание в формате `ДД.ММ.ГГГГ ЧЧ:ММ`:")
+    elif update_type == "progress":
+        await message.answer("Введите новый прогресс ученика:")
+    elif update_type == "homework":
+        await message.answer("Введите новое домашнее задание:")
+
+    await state.set_state(UpdateState.waiting_for_new_value)
 
 @dp.message(UpdateState.waiting_for_new_value)
 async def save_new_value(message: types.Message, state: FSMContext):
@@ -290,6 +299,13 @@ async def save_new_value(message: types.Message, state: FSMContext):
     data = await state.get_data()
     student_login = data.get("student_login")
     update_type = data.get("update_type")
+
+    if update_type == "schedule":
+        try:
+            datetime.strptime(new_value, "%d.%m.%Y %H:%M")
+        except ValueError:
+            await message.answer("❌ Неверный формат даты! Введите в формате `ДД.ММ.ГГГГ ЧЧ:ММ`.")
+            return
 
     async with aiosqlite.connect("students.db") as db:
         await db.execute(f"UPDATE students SET {update_type}=? WHERE login=?", (new_value, student_login))
@@ -303,7 +319,7 @@ async def save_new_value(message: types.Message, state: FSMContext):
 # ====== НАПОМИНАНИЯ ======
 async def send_reminders():
     while True:
-        now = datetime.now()
+        now = datetime.now(pytz.utc).astimezone(MOSCOW_TZ)  # Получаем текущее московское время
         async with aiosqlite.connect("students.db") as db:
             async with db.execute("SELECT login, schedule FROM students") as cursor:
                 students = await cursor.fetchall()
@@ -312,16 +328,28 @@ async def send_reminders():
             if not schedule:
                 continue
             try:
-                lesson_time = datetime.strptime(schedule, "%Y-%m-%d %H:%M")
+                # Преобразуем время урока в московское время
+                lesson_time = datetime.strptime(schedule, "%d.%m.%Y %H:%M").replace(tzinfo=MOSCOW_TZ)
+
+                # 🔹 Напоминание за 2 часа до урока
                 if lesson_time - timedelta(hours=2) <= now < lesson_time - timedelta(hours=1, minutes=55):
                     await bot.send_message(login, "📌 Напоминание: через 2 часа у тебя урок, не забудь сделать ДЗ.")
+
+                # 🔹 Напоминание за 5 минут после урока
                 elif lesson_time + timedelta(minutes=5) <= now < lesson_time + timedelta(minutes=10):
                     await bot.send_message(login, "💳 Напоминание: не забудь оплатить урок.")
+
+                # 🔹 Удаление прошедшего урока из базы (через 15 минут после урока)
+                elif now >= lesson_time + timedelta(minutes=15):
+                    async with aiosqlite.connect("students.db") as db:
+                        await db.execute("UPDATE students SET schedule=NULL WHERE login=?", (login,))
+                        await db.commit()
+                        await bot.send_message(login, "✅ Урок завершен, расписание обновлено.")
+
             except ValueError:
                 continue
 
-        await asyncio.sleep(300)
-
+        await asyncio.sleep(300)  # Проверка каждые 5 минут
 
 
 # ====== О РЕПЕТИТОРЕ ======
