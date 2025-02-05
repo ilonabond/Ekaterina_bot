@@ -15,7 +15,7 @@ TOKEN = os.getenv("BOT_TOKEN")
 if not TOKEN:
     raise ValueError("BOT_TOKEN не найден в .env файле!")
 
-ADMIN_ID = int(os.getenv("ADMIN_ID", "123456789"))  # Укажи свой Telegram ID
+ADMIN_ID = int(os.getenv("ADMIN_ID", "1000461829"))  # Укажи свой Telegram ID
 
 # Логирование
 logging.basicConfig(level=logging.INFO)
