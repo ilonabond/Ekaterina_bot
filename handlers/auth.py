@@ -5,9 +5,9 @@ from aiogram.fsm.state import State, StatesGroup
 from database import get_student
 from config import ADMIN_ID
 from utils import start_menu, student_keyboard, admin_keyboard
+import aiosqlite
 
 router = Router()
-
 
 class AuthState(StatesGroup):
     login = State()
@@ -18,36 +18,52 @@ class AuthState(StatesGroup):
 async def cmd_start(message: types.Message):
     await message.answer("Привет! Выберите действие:", reply_markup=start_menu())
 
-
-@router.message(Command("login"))
-async def start_auth(message: types.Message, state: FSMContext):
-    await message.answer("Введите ваш логин:")
+# ====== Кнопка "Войти" ======
+@router.message(lambda message: message.text == "🔑 Войти")
+async def login_request(message: types.Message, state: FSMContext):
+    await message.answer("Введите ваш логин (число, например: `12345`):")
     await state.set_state(AuthState.login)
 
-
+# ====== Ввод логина ======
 @router.message(AuthState.login)
 async def process_login(message: types.Message, state: FSMContext):
+    if not message.text.isdigit():
+        await message.answer("❌ Логин должен быть числом. Попробуйте снова.")
+        return
+
     await state.update_data(login=message.text)
-    await message.answer("Введите ваш пароль:")
+    await message.answer("Введите ваш пароль (число, например: `67890`):")
     await state.set_state(AuthState.password)
 
-
+# ====== Ввод пароля ======
 @router.message(AuthState.password)
 async def process_password(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    student = get_student(data["login"])
+    if not message.text.isdigit():
+        await message.answer("❌ Пароль должен быть числом. Попробуйте снова.")
+        return
 
-    if student and student[1] == message.text:  # Проверка пароля
-        await message.answer(f"Добро пожаловать, {student[2]}!", reply_markup=student_keyboard())
-    elif message.from_user.id == ADMIN_ID:
-        await message.answer("Вы вошли как администратор.", reply_markup=admin_keyboard())
-    else:
-        await message.answer("Неверный логин или пароль.")
+    data = await state.get_data()
+    login, password = data["login"], message.text
+
+    # Проверка на администратора
+    if login == ADMIN_ID:
+        await message.answer("✅ Вход выполнен! Добро пожаловать, преподаватель!", reply_markup=admin_keyboard())
+        await state.clear()
+        return
+
+    # Проверка студента в базе данных
+    async with aiosqlite.connect("students.db") as db:
+        async with db.execute("SELECT name FROM students WHERE login=? AND password=?", (login, password)) as cursor:
+            student = await cursor.fetchone()
 
     await state.clear()
 
+    if student:
+        await message.answer(f"✅ Вход выполнен, {student[0]}!", reply_markup=student_keyboard())
+    else:
+        await message.answer("⛔ Неверный логин или пароль!")
 
-# Пример информации о репетиторе
+# ====== Команда /about_tutor или кнопка "ℹ️ О репетиторе" ======
 TUTOR_INFO = """
 Я ваш репетитор, и я готова помочь Вам с вашим учебным процессом!
 
@@ -59,12 +75,6 @@ TUTOR_INFO = """
 Свяжитесь со мной, если у вас есть вопросы.
 """
 
-@router.message(Command("about_tutor"))
+@router.message(lambda message: message.text == "ℹ️ О репетиторе" or message.text == "/about_tutor")
 async def about_tutor(message: types.Message):
     await message.answer(TUTOR_INFO)
-
-@router.message(lambda message: message.text == "ℹ️ О репетиторе")
-async def about_tutor(message: types.Message):
-    await message.answer(TUTOR_INFO)
-
-
