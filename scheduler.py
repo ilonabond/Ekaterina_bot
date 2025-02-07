@@ -3,13 +3,11 @@ import asyncio
 from aiogram import Bot
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from datetime import datetime, timedelta
-from config import BOT_TOKEN
 
-bot = Bot(token=BOT_TOKEN)
 scheduler = AsyncIOScheduler()
 
 
-async def send_reminders():
+async def send_reminders(bot: Bot):
     conn = sqlite3.connect("database.db")
     cursor = conn.cursor()
     cursor.execute("SELECT login, schedule FROM students")
@@ -23,33 +21,23 @@ async def send_reminders():
             continue
         lesson_time = datetime.strptime(schedule, "%d.%m.%y %H:%M")
 
-        # За 2 часа до урока
-        if now + timedelta(hours=2) >= lesson_time:
-            await bot.send_message(login, "Напоминание: Через 2 часа у вас урок!")
+        try:
+            if now + timedelta(hours=2) >= lesson_time:
+                await bot.send_message(login, "Напоминание: Через 2 часа у вас урок!")
 
-        # Через 5 минут после урока
-        if now >= lesson_time + timedelta(minutes=5):
-            await bot.send_message(login, "Напоминание: Не забудьте оплатить урок.")
+            if now >= lesson_time + timedelta(minutes=5):
+                await bot.send_message(login, "Напоминание: Не забудьте оплатить урок.")
 
-        # Очистка прошедших уроков через 15 минут
-        if now >= lesson_time + timedelta(minutes=15):
-            conn = sqlite3.connect("database.db")
-            cursor = conn.cursor()
-            cursor.execute("UPDATE students SET schedule = '' WHERE login = ?", (login,))
-            conn.commit()
-            conn.close()
+            if now >= lesson_time + timedelta(minutes=15):
+                conn = sqlite3.connect("database.db")
+                cursor = conn.cursor()
+                cursor.execute("UPDATE students SET schedule = '' WHERE login = ?", (login,))
+                conn.commit()
+                conn.close()
+        except Exception as e:
+            print(f"Ошибка при отправке сообщения {login}: {e}")
 
 
-def setup_scheduler():
-    scheduler.add_job(send_reminders, "interval", minutes=5)
+def setup_scheduler(bot: Bot):
+    scheduler.add_job(send_reminders, "interval", minutes=5, args=[bot])
     scheduler.start()
-
-
-async def main():
-    setup_scheduler()  # Запускаем напоминания без аргументов
-    while True:
-        await asyncio.sleep(3600)  # Запуск в бесконечном цикле
-
-
-if __name__ == "__main__":
-    asyncio.run(main())  # Запуск асинхронного цикла

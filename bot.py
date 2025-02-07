@@ -1,43 +1,29 @@
-import sqlite3
+import logging
 import asyncio
-from aiogram import Bot
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from datetime import datetime, timedelta
+from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
+from config import BOT_TOKEN
+from handlers import auth, student, admin
+from scheduler import setup_scheduler
 
-scheduler = AsyncIOScheduler()
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
 
+# Создаем экземпляр бота
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
 
-async def send_reminders(bot: Bot):
-    conn = sqlite3.connect("database.db")
-    cursor = conn.cursor()
-    cursor.execute("SELECT login, schedule FROM students")
-    students = cursor.fetchall()
-    conn.close()
+# Создаем диспетчер
+dp = Dispatcher()
 
-    now = datetime.now()
+async def main():
+    dp["bot"] = bot  # Регистрируем бота в контексте
+    dp.include_router(auth.router)
+    dp.include_router(student.router)
+    dp.include_router(admin.router)
 
-    for login, schedule in students:
-        if not schedule:
-            continue
-        lesson_time = datetime.strptime(schedule, "%d.%m.%y %H:%M")
+    setup_scheduler(bot)  # Передаем бота в планировщик
 
-        try:
-            if now + timedelta(hours=2) >= lesson_time:
-                await bot.send_message(login, "Напоминание: Через 2 часа у вас урок!")
+    await dp.start_polling(bot)  # Передаем бота в start_polling()
 
-            if now >= lesson_time + timedelta(minutes=5):
-                await bot.send_message(login, "Напоминание: Не забудьте оплатить урок.")
-
-            if now >= lesson_time + timedelta(minutes=15):
-                conn = sqlite3.connect("database.db")
-                cursor = conn.cursor()
-                cursor.execute("UPDATE students SET schedule = '' WHERE login = ?", (login,))
-                conn.commit()
-                conn.close()
-        except Exception as e:
-            print(f"Ошибка при отправке сообщения {login}: {e}")
-
-
-def setup_scheduler(bot: Bot):
-    scheduler.add_job(send_reminders, "interval", minutes=5, args=[bot])
-    scheduler.start()
+if __name__ == "__main__":
+    asyncio.run(main())
