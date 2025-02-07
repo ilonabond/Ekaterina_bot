@@ -45,3 +45,26 @@ async def process_password(message: types.Message, state: FSMContext):
         await message.answer("Неверный логин или пароль.")
 
     await state.clear()
+
+
+# Пример информации о репетиторе
+TUTOR_INFO = """
+Я ваш репетитор, и я готова помочь Вам с вашим учебным процессом!
+
+Мои предметы:
+- Математика
+- Физика
+- Английский язык
+
+Свяжитесь со мной, если у вас есть вопросы.
+"""
+
+@router.message(Command("about_tutor"))
+async def about_tutor(message: types.Message):
+    await message.answer(TUTOR_INFO)
+
+@router.message(lambda message: message.text == "ℹ️ О репетиторе")
+async def about_tutor(message: types.Message):
+    await message.answer(TUTOR_INFO)
+
+
