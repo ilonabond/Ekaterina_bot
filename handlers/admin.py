@@ -4,6 +4,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from database import add_student, remove_student, update_student, get_all_students, get_homework_submissions
 from config import ADMIN_ID
+from utils import admin_keyboard
 
 router = Router()
 
@@ -35,7 +36,7 @@ async def process_password(message: types.Message, state: FSMContext):
 async def process_name(message: types.Message, state: FSMContext):
     data = await state.get_data()
     add_student(data["login"], data["password"], message.text)
-    await message.answer("Ученик добавлен!")
+    await message.answer("Ученик добавлен!", reply_markup=admin_keyboard())
     await state.clear()
 
 @router.message(Command("remove_student"))
@@ -47,7 +48,7 @@ async def remove_student_command(message: types.Message):
 @router.message()
 async def process_remove_student(message: types.Message):
     remove_student(message.text)
-    await message.answer("Ученик удален.")
+    await message.answer("Ученик удален.", reply_markup=admin_keyboard())
 
 @router.message(Command("students"))
 async def list_students(message: types.Message):
@@ -55,7 +56,7 @@ async def list_students(message: types.Message):
         return await message.answer("Доступ запрещен!")
     students = get_all_students()
     response = "\n".join([f"{s[1]} (логин: {s[0]})" for s in students])
-    await message.answer(f"Список учеников:\n{response}")
+    await message.answer(f"Список учеников:\n{response}", reply_markup=admin_keyboard())
 
 @router.message(Command("homework_submissions"))
 async def list_homework_submissions(message: types.Message):
@@ -63,7 +64,7 @@ async def list_homework_submissions(message: types.Message):
         return await message.answer("Доступ запрещен!")
     submissions = get_homework_submissions()
     response = "\n".join([f"{s[0]}: {s[1]}" for s in submissions])
-    await message.answer(f"Отправленные домашние задания:\n{response}")
+    await message.answer(f"Отправленные домашние задания:\n{response}", reply_markup=admin_keyboard())
 
 @router.message(Command("update_schedule"))
 async def update_schedule_command(message: types.Message):
@@ -76,7 +77,7 @@ async def process_update_schedule(message: types.Message):
     try:
         login, schedule = message.text.split(" | ")
         update_student(login, "schedule", schedule)
-        await message.answer("Расписание обновлено!")
+        await message.answer("Расписание обновлено!", reply_markup=admin_keyboard())
     except:
         await message.answer("Ошибка формата, попробуйте снова.")
 
@@ -91,7 +92,7 @@ async def process_update_progress(message: types.Message):
     try:
         login, progress = message.text.split(" | ")
         update_student(login, "progress", progress)
-        await message.answer("Прогресс обновлен!")
+        await message.answer("Прогресс обновлен!", reply_markup=admin_keyboard())
     except:
         await message.answer("Ошибка формата, попробуйте снова.")
 
@@ -106,6 +107,6 @@ async def process_update_homework(message: types.Message):
     try:
         login, homework = message.text.split(" | ")
         update_student(login, "homework", homework)
-        await message.answer("Домашнее задание обновлено!")
+        await message.answer("Домашнее задание обновлено!", reply_markup=admin_keyboard())
     except:
         await message.answer("Ошибка формата, попробуйте снова.")

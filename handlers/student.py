@@ -2,6 +2,7 @@ from aiogram import Router, types
 from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from database import get_student, submit_homework
+from utils import student_keyboard, admin_keyboard
 
 router = Router()
 
@@ -9,7 +10,7 @@ router = Router()
 async def show_homework(message: types.Message):
     student = get_student(message.from_user.id)
     if student:
-        await message.answer(f"Ваше домашнее задание: {student[5]}")
+        await message.answer(f"Ваше домашнее задание: {student[5]}", reply_markup=student_keyboard())
     else:
         await message.answer("Вы не зарегистрированы.")
 
@@ -17,7 +18,7 @@ async def show_homework(message: types.Message):
 async def show_schedule(message: types.Message):
     student = get_student(message.from_user.id)
     if student:
-        await message.answer(f"Ваше расписание: {student[3]}")
+        await message.answer(f"Ваше расписание: {student[3]}", reply_markup=student_keyboard())
     else:
         await message.answer("Вы не зарегистрированы.")
 
@@ -25,7 +26,7 @@ async def show_schedule(message: types.Message):
 async def show_progress(message: types.Message):
     student = get_student(message.from_user.id)
     if student:
-        await message.answer(f"Ваш прогресс: {student[4]}")
+        await message.answer(f"Ваш прогресс: {student[4]}", reply_markup=student_keyboard())
     else:
         await message.answer("Вы не зарегистрированы.")
 
@@ -41,4 +42,4 @@ async def receive_homework(message: types.Message):
         submission = message.text
 
     submit_homework(message.from_user.id, submission)
-    await message.answer("Ваше домашнее задание отправлено репетитору!")
+    await message.answer("Ваше домашнее задание отправлено репетитору!", reply_markup=student_keyboard())
