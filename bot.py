@@ -1,3 +1,4 @@
+# bot.py
 import logging
 import asyncio
 from aiogram import Bot, Dispatcher
@@ -5,20 +6,26 @@ from config import BOT_TOKEN
 from handlers import auth, student, admin
 from scheduler import setup_scheduler
 
+# Настройка логирования
 logging.basicConfig(level=logging.INFO)
 
+# Создаем экземпляр бота
 bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
+
+# Создаем экземпляр диспетчера
+dp = Dispatcher(bot)
 
 async def main():
-    # Регистрируем обработчики роутеров
+    # Подключаем роутеры для различных частей бота
     dp.include_router(auth.router)
     dp.include_router(student.router)
     dp.include_router(admin.router)
 
-    # Запускаем напоминания
-    setup_scheduler()  # Теперь не передаем bot в setup_scheduler, т.к. bot доступен глобально
-    await dp.start_polling(bot)
+    # Запускаем планировщик для напоминаний
+    setup_scheduler()  # Запуск напоминаний
+
+    # Запускаем бота
+    await dp.start_polling()
 
 if __name__ == "__main__":
-    asyncio.run(main())  # Запускаем асинхронный цикл
+    asyncio.run(main())  # Запуск асинхронного цикла

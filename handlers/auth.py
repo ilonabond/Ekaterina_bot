@@ -12,6 +12,10 @@ class AuthState(StatesGroup):
     login = State()
     password = State()
 
+# ====== КОМАНДА /START ======
+@router.message(Command("start"))
+async def cmd_start(message: types.Message):
+    await message.answer("Привет! Выберите действие:")
 
 @router.message(Command("login"))
 async def start_auth(message: types.Message, state: FSMContext):
