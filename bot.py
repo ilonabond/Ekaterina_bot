@@ -1,31 +1,43 @@
-# bot.py
-import logging
+import sqlite3
 import asyncio
-from aiogram import Bot, Dispatcher
-from config import BOT_TOKEN
-from handlers import auth, student, admin
-from scheduler import setup_scheduler
+from aiogram import Bot
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from datetime import datetime, timedelta
 
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
+scheduler = AsyncIOScheduler()
 
-# Создаем экземпляр бота
-bot = Bot(token=BOT_TOKEN)
 
-# Создаем экземпляр диспетчера
-dp = Dispatcher(bot)
+async def send_reminders(bot: Bot):
+    conn = sqlite3.connect("database.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT login, schedule FROM students")
+    students = cursor.fetchall()
+    conn.close()
 
-async def main():
-    # Подключаем роутеры для различных частей бота
-    dp.include_router(auth.router)
-    dp.include_router(student.router)
-    dp.include_router(admin.router)
+    now = datetime.now()
 
-    # Запускаем планировщик для напоминаний
-    setup_scheduler()  # Запуск напоминаний
+    for login, schedule in students:
+        if not schedule:
+            continue
+        lesson_time = datetime.strptime(schedule, "%d.%m.%y %H:%M")
 
-    # Запускаем бота
-    await dp.start_polling()
+        try:
+            if now + timedelta(hours=2) >= lesson_time:
+                await bot.send_message(login, "Напоминание: Через 2 часа у вас урок!")
 
-if __name__ == "__main__":
-    asyncio.run(main())  # Запуск асинхронного цикла
+            if now >= lesson_time + timedelta(minutes=5):
+                await bot.send_message(login, "Напоминание: Не забудьте оплатить урок.")
+
+            if now >= lesson_time + timedelta(minutes=15):
+                conn = sqlite3.connect("database.db")
+                cursor = conn.cursor()
+                cursor.execute("UPDATE students SET schedule = '' WHERE login = ?", (login,))
+                conn.commit()
+                conn.close()
+        except Exception as e:
+            print(f"Ошибка при отправке сообщения {login}: {e}")
+
+
+def setup_scheduler(bot: Bot):
+    scheduler.add_job(send_reminders, "interval", minutes=5, args=[bot])
+    scheduler.start()
